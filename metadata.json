@@ -1,0 +1,7 @@
+{
+  "name": "Pet GPS Tracker",
+  "description": "A modern web application to track your pet's location in real-time using a GPS-enabled collar. View your pet's position on a map, monitor their status, and get peace of mind.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
