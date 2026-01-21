@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { GoogleGenAI } from '@google/genai';
-import { Pet, PetStatus, Location, GroundingChunk, HealthMetrics } from './types';
+import { Pet, PetStatus, Location, GroundingChunk } from './types';
 import Header from './components/Header';
 import Map from './components/Map';
 import PetProfile from './components/PetProfile';
@@ -9,45 +9,35 @@ import PetStatusPill from './components/PetStatusPill';
 import Surroundings from './components/Surroundings';
 import HistoryView from './components/HistoryView';
 import HealthView from './components/HealthView';
-
-const SAFE_ZONE_CENTER: Location = { x: 50, y: 50 };
-const SAFE_ZONE_RADIUS = 35; // in percentage of map dimensions
+import Notification from './components/Notification';
+import { fetchPetData, getInitialPetData } from './services/petApi';
 
 const App: React.FC = () => {
-  const [pet, setPet] = useState<Pet>({
-    id: '1',
-    name: 'Buddy',
-    breed: 'Golden Retriever',
-    imageUrl: 'https://picsum.photos/seed/buddy/200/200',
-    location: { x: 50, y: 50 },
-    status: PetStatus.SAFE,
-    lastUpdate: new Date(),
-    history: [],
-    health: {
-      activityLevel: 75,
-      heartRate: 85,
-      temperature: 38.5,
-    },
-    healthHistory: [],
-  });
-
+  const [pet, setPet] = useState<Pet | null>(null);
   const [userLocation, setUserLocation] = useState<{latitude: number, longitude: number} | null>(null);
   const [surroundings, setSurroundings] = useState<GroundingChunk[] | null>(null);
   const [isFetchingSurroundings, setIsFetchingSurroundings] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [isHistoryVisible, setIsHistoryVisible] = useState(false);
   const [isHealthViewVisible, setIsHealthViewVisible] = useState(false);
+  const [isLiveTracking, setIsLiveTracking] = useState(false);
+  const [notification, setNotification] = useState<{ message: string; type: 'success' | 'warning' } | null>(null);
+
+  // Geofence State
+  const [safeZoneCenter, setSafeZoneCenter] = useState<Location>({ x: 50, y: 50 });
+  const [safeZoneRadius, setSafeZoneRadius] = useState<number>(35);
+  const [isEditingGeofence, setIsEditingGeofence] = useState(false);
+  const [tempSafeZone, setTempSafeZone] = useState<{ center: Location, radius: number } | null>(null);
 
   const prevStatusRef = useRef<PetStatus | null>(null);
 
   useEffect(() => {
+    setPet(getInitialPetData());
+
     if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(
             (position) => {
-                setUserLocation({
-                    latitude: position.coords.latitude,
-                    longitude: position.coords.longitude,
-                });
+                setUserLocation({ latitude: position.coords.latitude, longitude: position.coords.longitude });
             },
             (error) => {
                 console.error("Error getting user location:", error);
@@ -56,6 +46,18 @@ const App: React.FC = () => {
         );
     }
   }, []);
+
+  useEffect(() => {
+    const updatePetData = async () => {
+      // Pass current safe zone to the API simulation
+      const newPetData = await fetchPetData({ center: safeZoneCenter, radius: safeZoneRadius });
+      setPet(newPetData);
+    };
+    
+    const updateInterval = isLiveTracking ? 500 : 2000;
+    const intervalId = setInterval(updatePetData, updateInterval);
+    return () => clearInterval(intervalId);
+  }, [isLiveTracking, safeZoneCenter, safeZoneRadius]);
 
   const fetchSurroundings = async (petLocation: Location) => {
       if (!userLocation) {
@@ -69,24 +71,13 @@ const App: React.FC = () => {
 
       try {
           const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
           const petLat = userLocation.latitude + (petLocation.y - 50) * 0.0005;
           const petLon = userLocation.longitude + (petLocation.x - 50) * 0.0005;
           
           const response = await ai.models.generateContent({
               model: "gemini-2.5-flash",
               contents: `My pet is wandering near latitude ${petLat}, longitude ${petLon}. What are some notable places nearby, like parks, cafes, or busy roads?`,
-              config: {
-                  tools: [{googleMaps: {}}],
-                  toolConfig: {
-                      retrievalConfig: {
-                          latLng: {
-                              latitude: petLat,
-                              longitude: petLon
-                          }
-                      }
-                  }
-              },
+              config: { tools: [{googleMaps: {}}], toolConfig: { retrievalConfig: { latLng: { latitude: petLat, longitude: petLon } } } },
           });
 
           const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
@@ -105,70 +96,76 @@ const App: React.FC = () => {
   };
 
   useEffect(() => {
-    const updatePetData = () => {
-      setPet(prevPet => {
-        // Simulate Location
-        const moveX = (Math.random() - 0.5) * 4;
-        const moveY = (Math.random() - 0.5) * 4;
-        let newX = Math.max(0, Math.min(100, prevPet.location.x + moveX));
-        let newY = Math.max(0, Math.min(100, prevPet.location.y + moveY));
-        const newLocation: Location = { x: newX, y: newY };
-
-        const distance = Math.sqrt(Math.pow(newX - SAFE_ZONE_CENTER.x, 2) + Math.pow(newY - SAFE_ZONE_CENTER.y, 2));
-        const newStatus = distance > SAFE_ZONE_RADIUS ? PetStatus.WANDERING : PetStatus.SAFE;
-        
-        const newLocationHistory = [{ location: prevPet.location, timestamp: new Date() }, ...prevPet.history].slice(0, 20);
-
-        // Simulate Health Metrics
-        const newHealth: HealthMetrics = {
-          activityLevel: Math.max(10, Math.min(95, prevPet.health.activityLevel + (Math.random() - 0.5) * 10)),
-          heartRate: Math.max(60, Math.min(140, prevPet.health.heartRate + (Math.random() - 0.5) * 5)),
-          temperature: parseFloat(Math.max(38.0, Math.min(39.5, prevPet.health.temperature + (Math.random() - 0.5) * 0.2)).toFixed(1)),
-        };
-
-        const newHealthHistory = [{ metrics: prevPet.health, timestamp: new Date() }, ...prevPet.healthHistory].slice(0, 20);
-
-        return {
-          ...prevPet,
-          location: newLocation,
-          status: newStatus,
-          lastUpdate: new Date(),
-          history: newLocationHistory,
-          health: newHealth,
-          healthHistory: newHealthHistory,
-        };
-      });
-    };
-
-    const intervalId = setInterval(updatePetData, 2000);
-    return () => clearInterval(intervalId);
-  }, []);
-
-  useEffect(() => {
+    if (!pet) return;
     const prevStatus = prevStatusRef.current;
-    if (pet.status === PetStatus.WANDERING && prevStatus !== PetStatus.WANDERING) {
+    if (prevStatus && prevStatus !== pet.status) {
+      if (pet.status === PetStatus.WANDERING) {
+        setNotification({ message: `${pet.name} has left the safe zone!`, type: 'warning' });
         fetchSurroundings(pet.location);
-    }
-    if (pet.status === PetStatus.SAFE && prevStatus === PetStatus.WANDERING) {
+      } else if (pet.status === PetStatus.SAFE) {
+        setNotification({ message: `${pet.name} is back in the safe zone.`, type: 'success' });
         setSurroundings(null);
         setFetchError(null);
+      }
     }
     prevStatusRef.current = pet.status;
-  }, [pet.status, pet.location, userLocation]);
+  }, [pet?.status, pet?.location, userLocation]);
 
   const handlePetImageUpload = (newImageUrl: string) => {
-    setPet(prevPet => ({
-      ...prevPet,
-      imageUrl: newImageUrl,
-    }));
+    setPet(prevPet => prevPet ? ({ ...prevPet, imageUrl: newImageUrl }) : null);
   };
+
+  // --- Geofence Edit Handlers ---
+  const handleStartEditGeofence = () => {
+    setTempSafeZone({ center: safeZoneCenter, radius: safeZoneRadius });
+    setIsEditingGeofence(true);
+  };
+
+  const handleSaveGeofence = () => {
+    if (tempSafeZone) {
+      setSafeZoneCenter(tempSafeZone.center);
+      setSafeZoneRadius(tempSafeZone.radius);
+    }
+    setIsEditingGeofence(false);
+    setTempSafeZone(null);
+  };
+
+  const handleCancelGeofence = () => {
+    setIsEditingGeofence(false);
+    setTempSafeZone(null);
+  };
+
+  const handleGeofenceChange = (newZone: { center: Location, radius: number }) => {
+    setTempSafeZone(newZone);
+  };
+
+  if (!pet) {
+    return (
+      <div className="flex justify-center items-center h-screen bg-gray-100">
+        <div className="animate-spin rounded-full h-16 w-16 border-b-4 border-blue-600"></div>
+        <p className="ml-4 text-xl text-gray-700">Connecting to GPS collar...</p>
+      </div>
+    );
+  }
+
+  const currentSafeZone = isEditingGeofence && tempSafeZone ? tempSafeZone : { center: safeZoneCenter, radius: safeZoneRadius };
 
   return (
     <div className="flex flex-col h-screen font-sans bg-gray-50 text-gray-800">
+      <Notification notification={notification} onClose={() => setNotification(null)} />
       <Header petName={pet.name} />
       <main className="flex-grow flex flex-col md:flex-row relative overflow-hidden">
         <div className="w-full md:flex-1 h-1/2 md:h-full relative bg-green-100">
-           <Map location={pet.location} safeZoneCenter={SAFE_ZONE_CENTER} safeZoneRadius={SAFE_ZONE_RADIUS} status={pet.status} />
+           <Map 
+              location={pet.location} 
+              safeZoneCenter={currentSafeZone.center} 
+              safeZoneRadius={currentSafeZone.radius}
+              status={pet.status} 
+              petName={pet.name} 
+              isLiveTracking={isLiveTracking}
+              isEditingGeofence={isEditingGeofence}
+              onGeofenceChange={handleGeofenceChange}
+            />
         </div>
         <div className="w-full md:w-80 lg:w-96 bg-white border-l border-gray-200 p-4 sm:p-6 flex flex-col justify-between shadow-lg overflow-y-auto">
             <div>
@@ -182,25 +179,37 @@ const App: React.FC = () => {
               }
             </div>
             <div className="mt-6 grid grid-cols-1 gap-3">
-              <button className="w-full bg-blue-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center text-lg">
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6 mr-2">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1 1 15 0Z" />
-                </svg>
-                Locate Pet
-              </button>
-               <button onClick={() => setIsHistoryVisible(true)} className="w-full bg-gray-200 text-gray-700 font-bold py-3 px-4 rounded-lg hover:bg-gray-300 transition-colors flex items-center justify-center text-lg">
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6 mr-2">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.042A8.967 8.967 0 0 0 6 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 0 1 6 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 0 1 6-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0 0 18 18a8.967 8.967 0 0 0-6 2.292m0-14.25v14.25" />
-                </svg>
-                View History
-              </button>
-               <button onClick={() => setIsHealthViewVisible(true)} className="w-full bg-gray-200 text-gray-700 font-bold py-3 px-4 rounded-lg hover:bg-gray-300 transition-colors flex items-center justify-center text-lg">
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6 mr-2">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12Z" />
-                </svg>
-                Health Stats
-              </button>
+              {isEditingGeofence ? (
+                <>
+                  <button onClick={handleSaveGeofence} className="w-full bg-green-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-green-700 transition-colors flex items-center justify-center text-lg">
+                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6 mr-2"><path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" /></svg>
+                    Save Zone
+                  </button>
+                   <button onClick={handleCancelGeofence} className="w-full bg-gray-600 text-white font-bold py-3 px-4 rounded-lg hover:bg-gray-700 transition-colors flex items-center justify-center text-lg">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6 mr-2"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" /></svg>
+                    Cancel
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button onClick={handleStartEditGeofence} className="w-full bg-gray-200 text-gray-700 font-bold py-3 px-4 rounded-lg hover:bg-gray-300 transition-colors flex items-center justify-center text-lg">
+                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6 mr-2"><path strokeLinecap="round" strokeLinejoin="round" d="m16.862 4.487 1.687-1.688a1.875 1.875 0 1 1 2.652 2.652L10.582 16.07a4.5 4.5 0 0 1-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 0 1 1.13-1.897l8.932-8.931Zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0 1 15.75 21H5.25A2.25 2.25 0 0 1 3 18.75V8.25A2.25 2.25 0 0 1 5.25 6H10" /></svg>
+                    Edit Safe Zone
+                  </button>
+                  <button onClick={() => setIsLiveTracking(!isLiveTracking)} className={`w-full font-bold py-3 px-4 rounded-lg transition-colors flex items-center justify-center text-lg ${ isLiveTracking ? 'bg-blue-600 text-white animate-pulse' : 'bg-gray-200 text-gray-700 hover:bg-gray-300' }`} >
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6 mr-2"><path strokeLinecap="round" strokeLinejoin="round" d="M8.288 15.045A9 9 0 0 1 7.5 15a9 9 0 0 1-1.42-5.002N7.333 4.511 8.333 3.5a2.121 2.121 0 0 1 3 0l1 1a2.121 2.121 0 0 1 0 3l-1.928 1.928a2.121 2.121 0 0 1-3 0l-1.42-1.42" /><path strokeLinecap="round" strokeLinejoin="round" d="M15.712 8.955a9 9 0 0 1 1.42 5.002 9 9 0 0 1-9 9 9 9 0 0 1-5.002-1.42m5.002-1.42 1.42-1.42a2.121 2.121 0 0 1 3 0l1.928 1.928a2.121 2.121 0 0 1 0 3l-1 1a2.121 2.121 0 0 1-3 0" /></svg>
+                    {isLiveTracking ? 'Live Tracking: ON' : 'Live Tracking: OFF'}
+                  </button>
+                  <button onClick={() => setIsHistoryVisible(true)} className="w-full bg-gray-200 text-gray-700 font-bold py-3 px-4 rounded-lg hover:bg-gray-300 transition-colors flex items-center justify-center text-lg">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6 mr-2"><path strokeLinecap="round" strokeLinejoin="round" d="M12 6.042A8.967 8.967 0 0 0 6 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 0 1 6 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 0 1 6-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0 0 18 18a8.967 8.967 0 0 0-6 2.292m0-14.25v14.25" /></svg>
+                    View History
+                  </button>
+                  <button onClick={() => setIsHealthViewVisible(true)} className="w-full bg-gray-200 text-gray-700 font-bold py-3 px-4 rounded-lg hover:bg-gray-300 transition-colors flex items-center justify-center text-lg">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6 mr-2"><path strokeLinecap="round" strokeLinejoin="round" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12Z" /></svg>
+                    Health Stats
+                  </button>
+                </>
+              )}
             </div>
         </div>
       </main>
