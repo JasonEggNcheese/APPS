@@ -10,6 +10,15 @@ export enum PetStatus {
   DANGER = 'Danger Zone',
 }
 
+export enum ConnectionStatus {
+  CONNECTED = 'Connected',
+  CONNECTING = 'Connecting',
+  DISCONNECTED = 'Disconnected',
+  BLUETOOTH = 'Bluetooth',
+}
+
+export type IconType = 'dog' | 'cat' | 'bird' | 'rabbit' | 'paw';
+
 export interface LocationHistoryItem {
   location: Location;
   timestamp: Date;
@@ -31,12 +40,18 @@ export interface Pet {
   name: string;
   breed: string;
   imageUrl: string;
+  iconType: IconType;
   location: Location;
   status: PetStatus;
+  connectionStatus: ConnectionStatus;
+  signalStrength: number; // 0 to 100
   lastUpdate: Date;
   history: LocationHistoryItem[];
   health: HealthMetrics;
   healthHistory: HealthHistoryItem[];
+  // Training Mode states
+  isBeeping?: boolean;
+  isFlashing?: boolean;
 }
 
 export interface GroundingChunk {

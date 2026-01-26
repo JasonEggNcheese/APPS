@@ -1,13 +1,14 @@
 
 import React, { useRef } from 'react';
-import { Pet } from '../types';
+import { Pet, IconType } from '../types';
 
 interface PetProfileProps {
   pet: Pet;
   onImageUpload: (imageUrl: string) => void;
+  onIconChange: (iconType: IconType) => void;
 }
 
-const PetProfile: React.FC<PetProfileProps> = ({ pet, onImageUpload }) => {
+const PetProfile: React.FC<PetProfileProps> = ({ pet, onImageUpload, onIconChange }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const timeAgo = (date: Date): string => {
@@ -46,6 +47,17 @@ const PetProfile: React.FC<PetProfileProps> = ({ pet, onImageUpload }) => {
     }
   };
 
+  const icons: { type: IconType; svg: React.ReactNode }[] = [
+    { type: 'dog', svg: <svg viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-5-9h10v2H7z"/></svg> }, // Placeholder circles replaced by Heroicon paths in actual PetMarker, using simpler SVGs for the picker
+    { type: 'cat', svg: <svg viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6"><path d="M12 2c5.52 0 10 4.48 10 10s-4.48 10-10 10S2 17.52 2 12 6.48 2 12 2zm1 10h3l-4-4-4 4h3v4h2v-4z"/></svg> },
+    { type: 'bird', svg: <svg viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg> },
+    { type: 'rabbit', svg: <svg viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm5 11h-4v4h-2v-4H7v-2h4V7h2v4h4v2z"/></svg> },
+    { type: 'paw', svg: <svg viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zM9.29 16.29L5.7 12.71 4.29 14.12 9.29 19.12 19.71 8.71 18.29 7.29 9.29 16.29Z"/></svg> },
+  ];
+
+  // Helper to get descriptive labels
+  const getIconLabel = (type: IconType) => type.charAt(0).toUpperCase() + type.slice(1);
+
   return (
     <div className="bg-white rounded-lg">
       <div className="flex items-center space-x-4">
@@ -82,6 +94,35 @@ const PetProfile: React.FC<PetProfileProps> = ({ pet, onImageUpload }) => {
           <span className="font-semibold text-gray-600">Last Seen:</span>
           <span className="font-bold text-gray-800">{lastSeen}</span>
         </div>
+        
+        {/* New Icon Picker Section */}
+        <div className="mt-4">
+          <h4 className="text-sm font-bold text-gray-500 uppercase mb-3">Marker Style</h4>
+          <div className="flex space-x-2 overflow-x-auto pb-2 scrollbar-hide">
+            {icons.map((icon) => (
+              <button
+                key={icon.type}
+                onClick={() => onIconChange(icon.type)}
+                className={`flex-shrink-0 w-12 h-12 rounded-full flex items-center justify-center transition-all ${
+                  pet.iconType === icon.type 
+                    ? 'bg-blue-600 text-white shadow-md scale-110' 
+                    : 'bg-gray-100 text-gray-400 hover:bg-gray-200'
+                }`}
+                title={getIconLabel(icon.type)}
+              >
+                {/* Simplified icons for the selection list */}
+                <div className="scale-75">
+                  {icon.type === 'dog' && <svg className="w-8 h-8" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path strokeLinecap="round" strokeLinejoin="round" d="M19.428 15.341A8.001 8.001 0 0012 4.5a8.001 8.001 0 00-7.428 10.841m14.856 0A7.5 7.5 0 0112 21.5a7.5 7.5 0 01-7.428-6.159m14.856 0a8.001 8.001 0 00-14.856 0"/></svg>}
+                  {icon.type === 'cat' && <svg className="w-8 h-8" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-3 3V9m8.31 4a10.03 10.03 0 01-18.62 0 10.03 10.03 0 0118.62 0z"/></svg>}
+                  {icon.type === 'bird' && <svg className="w-8 h-8" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>}
+                  {icon.type === 'rabbit' && <svg className="w-8 h-8" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>}
+                  {icon.type === 'paw' && <svg className="w-8 h-8" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z"/></svg>}
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+
         <div className="flex items-center justify-between bg-gray-100 p-3 rounded-lg">
           <span className="font-semibold text-gray-600">Collar Battery:</span>
           <div className="flex items-center">
